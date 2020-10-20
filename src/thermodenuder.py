@@ -18,7 +18,7 @@ class Thermodenuder:
             self.D_heat = 0.0364    # [m]
             self.l_heat = 0.5     # [m]
             self.D_cool = 0.0364    # [m]
-            self.l_col = 0.5    # [m]
+            self.l_cool = 0.5    # [m]
         else:
             self.D_heat = D_heat
             self.l_heat = l_heat
@@ -35,4 +35,14 @@ class Thermodenuder:
 
     def calc_centerline_residence_time(self, volume, flow_rate):
         crt = 0.5 * volume / flow_rate
+        return crt
+
+    def calc_heating_section_crt(self):
+        volume = self.calc_volume(self.D_heat, self.l_heat)
+        crt = self.calc_centerline_residence_time(volume, self.flow)
+        return crt
+
+    def calc_cooling_section_crt(self):
+        volume = self.calc_volume(self.D_cool, self.l_cool)
+        crt = self.calc_centerline_residence_time(volume, self.flow)
         return crt
