@@ -36,7 +36,7 @@ def calc_saturation_pressure_at_temperature(pstar, dh, td, constants):
     '''
     Calculate saturation vapor pressure with temperature dependence
     '''
-    psat_i = pstar * np.exp(dh * ((1.0/td.T_ref) - (1.0/td.T_i)) /
+    psat_i = pstar * np.exp(dh * ((1.0/td.T_ref) - (1.0/td.T_initial)) /
                             constants.IDEAL_GAS)
     return psat_i
 
@@ -46,7 +46,7 @@ def kelvin_effect_at_initial_temperature(mfr, td, constants):
     Calculate Kelvin effect at the initial TD temperature
     '''
     Ke_i = np.exp(2.0 * mfr.MW * mfr.sigma / (
-        constants.IDEAL_GAS * td.T_i * mfr.density * mfr.rp))
+        constants.IDEAL_GAS * td.T_initial * mfr.density * mfr.rp))
     return Ke_i
 
 
@@ -62,21 +62,39 @@ def vapor_mass_concentration(peq, mfr, constants):
     '''
     Calculate the vapor concentration at the initial temperature
     '''
-    cgas = peq * mfr.MW / (constants.IDEA_GAS * mfr.T_TD[0])
+    cgas = peq * mfr.MW / (constants.IDEAL_GAS * mfr.T_TD[0])
     return cgas
 
 
-def get_time_array(td, heating=True, n=1000, t0=0):
+def get_time_array(td, heating=True, mres=False, n=1000, t0=0):
     '''
     Get time and dt arrays for the integration
     '''
     if heating:
-        crt = td.calc_heating_section_crt()
+        if mres:
+            avg_res = td.get_avg_res_time_rings()
+            crt = avg_res[-1]
+        else:
+            crt = td.calc_heating_section_crt()
     else:
         crt = td.calc_cooling_section_crt()
     time = np.linspace(t0, crt, n)
     dt = np.mean(time[1:] - time[:-1])
     return time, dt
+
+
+def calc_mass_in_rings(td, time_heat, Pc_t_k):
+    Area, Area0 = td.get_rings()
+    avg_res = td.get_avg_res_time_rings()
+    # multiple residence time
+    mass = 0.0
+    for i in range(0, len(Area)):
+        if i == 0:
+            idx = 0
+        else:
+            idx = np.abs(time_heat - avg_res[i]).argmin()
+        mass = mass + Pc_t_k[idx]*(Area[i]/Area0)
+    return mass
 
 
 def initiate_integrator():
@@ -92,7 +110,8 @@ def set_integrator_params(r, dt, length, crt, T, n_tot_i, pstar, dh, time, y0,
     '''
     Set the integrator parameters
     '''
-    r.set_f_params(dt, length, crt, T, td.T_i, n_tot_i, pstar, dh, td.T_ref,
+    r.set_f_params(dt, length, crt, T, td.T_initial, n_tot_i, pstar, dh,
+                   td.T_ref,
                    mfr.MW, mfr.sigma, mfr.density, constants.DIFFUSION_COEF,
                    constants.MU, constants.PRESSURE, mfr.alpha,
                    constants.IDEAL_GAS)
@@ -101,7 +120,8 @@ def set_integrator_params(r, dt, length, crt, T, n_tot_i, pstar, dh, time, y0,
 
 
 def simulate_one_temperature(mp_in, gc_in, T, r, dt, time, length, crt,
-                             n_tot_i, pstar, dh, td, mfr, constants):
+                             n_tot_i, pstar, dh, td, mfr, constants,
+                             mres=False):
     '''
     Simulate the TD at a given temperature.
     Returns the estimate aerosol mass concentration at the end of the section
@@ -126,11 +146,15 @@ def simulate_one_temperature(mp_in, gc_in, T, r, dt, time, length, crt,
     Pc_t_k = np.ma.masked_less(Pc_t_k, 0.0).filled(0.0)
     Gc_t_k = np.ma.masked_less(Gc_t_k, 0.0).filled(0.0)
 
-    c_aer_out = n_tot_i * Pc_t_k[-1]
-    return c_aer_out
+    if mres:
+        mp_out = calc_mass_in_rings(td, time, Pc_t_k)
+    else:
+        mp_out = Pc_t_k[-1]
+
+    return mp_out
 
 
-def fitTD(mfr, td, cstar, dh):
+def fitTD(mfr, td, cstar, dh, cooling_section=True, mres=False):
     # Initialize object containing useful thermodynamic constants
     constants = ctd.ThermodynamicConstants()
     # Initial number concentration of OA
@@ -148,7 +172,7 @@ def fitTD(mfr, td, cstar, dh):
     # Vapor mass concentration
     cgas_i = vapor_mass_concentration(peq_i, mfr, constants)
     # Get time arrays
-    time_heat, dt_heat = get_time_array(td, heating=True)
+    time_heat, dt_heat = get_time_array(td, heating=True, mres=mres)
     time_cool, dt_cool = get_time_array(td, heating=False)
     # Output MFR array
     MFR_SIM = np.zeros(len(mfr.T_TD))
@@ -159,13 +183,16 @@ def fitTD(mfr, td, cstar, dh):
     crt_heat = td.calc_heating_section_crt()
     crt_cool = td.calc_cooling_section_crt()
     for k, T in enumerate(mfr.T_TD):
-        c_aer_out_heat = simulate_one_temperature(
+        mp_f = simulate_one_temperature(
             mp_i, cgas_i, T, r, dt_heat, time_heat, td.l_heat, crt_heat,
-            n_tot_i, pstar, dh, td, mfr, constants)
+            n_tot_i, pstar, dh, td, mfr, constants, mres=mres)
 
-        c_aer_out = simulate_one_temperature(
-            c_aer_out_heat, 0.0, td.T_cool, r, dt_cool, time_cool, td.l_cool,
-            crt_cool, n_tot_i, pstar, dh, td, mfr, constants)
+        if cooling_section:
+            mp_f = simulate_one_temperature(
+                mp_f, 0.0, td.T_cool, r, dt_cool, time_cool, td.l_cool,
+                crt_cool, n_tot_i, pstar, dh, td, mfr, constants)
+
+        c_aer_out = n_tot_i * mp_f
 
         MFR_SIM[k] = c_aer_out / mfr.c_aer
 

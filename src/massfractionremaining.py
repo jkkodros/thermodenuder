@@ -9,6 +9,7 @@ TD simulation
 """
 import numpy as np
 
+
 class MassFractionRemaining:
     def __init__(self, T_TD, MFR, c_aer=None, dp=None, density=1300,
                  MW=0.17, sigma=0.05, alpha=1.0):
@@ -19,13 +20,13 @@ class MassFractionRemaining:
         '''
         self.T_TD = T_TD
         self.MFR = MFR
-        self.c_aer = None
+        self.c_aer = c_aer
         self.dp = dp
         self.rp = dp/2.0
         self.density = density
         self.MW = MW
         self.sigma = sigma
-        self.alpha = 1.0
+        self.alpha = alpha
 
     def mass_per_particle(self):
         mass_per_particle = self.density * 4.0 * np.pi * self.rp**3 / 3.0
