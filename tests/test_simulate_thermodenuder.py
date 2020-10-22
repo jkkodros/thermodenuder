@@ -19,7 +19,7 @@ def get_norpinic_acid_sim(crt=True):
     if crt:
         f1 = np.load('tests/test_data/norpinicAcidFitting_CRT_2020.npz')
     else:
-        f1 = np.load('tests/test_data/norpinicAcidFitting_mRes_2020.npz')
+        f1 = np.load('tests/test_data/norpinicAcidFitting_mRes2020.npz')
     cstar = f1['cstar']
     dh_vap = f1['dHvap']
     mfr_sim = f1['MFR_sim']
@@ -78,7 +78,8 @@ class TestFitTD(object):
                            rtol=rtol, atol=atol), msg
 
     def test_norpinic_acid_mres(self):
-        cstar, dh, mfr_sim_norpinic, mfr_obs, T_TD = get_norpinic_acid_sim()
+        cstar, dh, mfr_sim_norpinic, mfr_obs, T_TD = get_norpinic_acid_sim(
+            crt=False)
         mfr, td = get_norpinic_acid_inputs()
         MFR_SIM = fitTD(mfr, td, cstar, dh, cooling_section=True, mres=True)
         msg = 'Calculated MRES does not fit norpinic acid CRT'
