@@ -13,6 +13,7 @@ from scipy.optimize import curve_fit
 from src.simulate_thermodenuder import fitTD
 from src.gridsearchtd import GridSearchTD
 
+
 class ThermodenuderSimulator:
     def __init__(self, mfr, td, param_grid=None, cstar0=None, dh0=None,
                  fitting_method='curve_fit', cooling_section=True, mres=True):
@@ -118,7 +119,7 @@ class ThermodenuderSimulator:
         self.dh_best = popt[0]
         self.cstar_best = self.cstar0
 
-    def calc_error(self, mfr_out):
+    def calculate_error(self, mfr_out):
         diff = (self.mfr.MFR - mfr_out)**2
         error = (diff.sum())**(0.5)/len(self.mfr.MFR)
         return error

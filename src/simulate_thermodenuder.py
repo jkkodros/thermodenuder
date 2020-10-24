@@ -12,64 +12,29 @@ from scipy import integrate
 
 from src import fluxes as fx
 from src import constants as ctd
+from src import thermodynamic_equations as eqns
 
 
-def calc_number_from_mass(mfr):
-    '''
-    Calculate total number from total OA mass assuming density and
-    spherical particles.
-    '''
-    n_tot = mfr.c_aer / (4.0 * mfr.density * mfr.rp**3 * np.pi/3.)
-    return n_tot
-
-
-def pstar_from_cstar(cstar, mfr, td, constants):
-    '''
-    Calculate saturation vapor concentration based off the given
-    saturation mass concentration (cstar)
-    '''
-    pstar = (cstar * constants.IDEAL_GAS * td.T_ref) / mfr.MW
-    return pstar
-
-
-def calc_saturation_pressure_at_temperature(pstar, dh, td, constants):
-    '''
-    Calculate saturation vapor pressure with temperature dependence
-    '''
-    psat_i = pstar * np.exp(dh * ((1.0/td.T_ref) - (1.0/td.T_initial)) /
-                            constants.IDEAL_GAS)
-    return psat_i
-
-
-def kelvin_effect_at_initial_temperature(mfr, td, constants):
-    '''
-    Calculate Kelvin effect at the initial TD temperature
-    '''
-    Ke_i = np.exp(2.0 * mfr.MW * mfr.sigma / (
-        constants.IDEAL_GAS * td.T_initial * mfr.density * mfr.rp))
-    return Ke_i
-
-
-def equilibrium_pressure(psat, Ke):
-    '''
-    Calculate equilibrium pressure
-    '''
-    peq = psat * Ke
-    return peq
-
-
-def vapor_mass_concentration(peq, mfr, constants):
-    '''
-    Calculate the vapor concentration at the initial temperature
-    '''
-    cgas = peq * mfr.MW / (constants.IDEAL_GAS * mfr.T_TD[0])
-    return cgas
+def calculate_initial_vapor_concentration(pstar, dh, mfr, td, constants):
+    '''Calculate the initial vapor concentration at TD entrance.'''
+    # Saturation vapor pressure at initial temperature
+    psat_i = eqns.calculate_saturation_pressure_at_temperature(
+        pstar, dh, td.T_ref, td.T_initial, constants.IDEAL_GAS)
+    # Kevlin effect at initial temperature and radius
+    Ke_i = eqns.calculate_kelvin_effect(
+        mfr.MW, mfr.sigma, td.T_initial, mfr.density, mfr.rp,
+        constants.IDEAL_GAS)
+    # Equilibrium pressure above particle surface
+    peq_i = eqns.calculate_equilibrium_pressure(psat_i, Ke_i)
+    # Vapor mass concentration at initial temperature
+    cgas_i = eqns.calculate_vapor_mass_concentration(
+        peq_i, mfr.MW, td.T_initial, constants.IDEAL_GAS)
+    return cgas_i
 
 
 def get_time_array(td, heating=True, mres=False, n=1000, t0=0):
     '''
-    Get time and dt arrays for the integration
-    '''
+    Get time and dt arrays for the integration.'''
     if heating:
         if mres:
             avg_res = td.get_avg_res_time_rings()
@@ -83,7 +48,8 @@ def get_time_array(td, heating=True, mres=False, n=1000, t0=0):
     return time, dt
 
 
-def calc_mass_in_rings(td, time_heat, Pc_t_k):
+def calculate_mass_in_rings(td, time_heat, Pc_t_k):
+    '''Calcute mass in each ring of TD for multiple residence time model.'''
     Area, Area0 = td.get_rings()
     avg_res = td.get_avg_res_time_rings()
     # multiple residence time
@@ -98,18 +64,14 @@ def calc_mass_in_rings(td, time_heat, Pc_t_k):
 
 
 def initiate_integrator():
-    '''
-    Setup the scipy integrator
-    '''
+    '''Setup the scipy integrator.'''
     r = integrate.ode(fx.calc_fluxes).set_integrator("dopri5")
     return r
 
 
 def set_integrator_params(r, dt, length, crt, T, n_tot_i, pstar, dh, time, y0,
                           td, mfr, constants):
-    '''
-    Set the integrator parameters
-    '''
+    '''Set the integrator parameters.'''
     r.set_f_params(dt, length, crt, T, td.T_initial, n_tot_i, pstar, dh,
                    td.T_ref,
                    mfr.MW, mfr.sigma, mfr.density, constants.DIFFUSION_COEF,
@@ -125,7 +87,7 @@ def simulate_one_temperature(mp_in, gc_in, T, r, dt, time, length, crt,
     '''
     Simulate the TD at a given temperature.
     Returns the estimate aerosol mass concentration at the end of the section
-    Note: This only does one section (not both heating and cooling)
+    Note: This only does one section (not both heating and cooling).
     '''
     y0 = np.array([mp_in, gc_in])
     y = np.zeros((len(time), len(y0)))
@@ -147,7 +109,7 @@ def simulate_one_temperature(mp_in, gc_in, T, r, dt, time, length, crt,
     Gc_t_k = np.ma.masked_less(Gc_t_k, 0.0).filled(0.0)
 
     if mres:
-        mp_out = calc_mass_in_rings(td, time, Pc_t_k)
+        mp_out = calculate_mass_in_rings(td, time, Pc_t_k)
     else:
         mp_out = Pc_t_k[-1]
 
@@ -157,20 +119,15 @@ def simulate_one_temperature(mp_in, gc_in, T, r, dt, time, length, crt,
 def fitTD(mfr, td, cstar, dh, cooling_section=True, mres=False):
     # Initialize object containing useful thermodynamic constants
     constants = ctd.ThermodynamicConstants()
-    # Initial number concentration of OA
-    n_tot_i = calc_number_from_mass(mfr)
+    # Calculate total number concentration and mass per particle at entrance
+    n_tot_i = mfr.calculate_number_from_mass()
+    mp_i = mfr.calculate_mass_per_particle()
     # Saturation vapor pressure (from given cstar)
-    pstar = pstar_from_cstar(cstar, mfr, td, constants)
-    # Saturation vapor pressure at initial temperature
-    psat_i = calc_saturation_pressure_at_temperature(pstar, dh, td, constants)
-    # Kevlin effect at initial temperature and radius
-    Ke_i = kelvin_effect_at_initial_temperature(mfr, td, constants)
-    # Equilibrium pressure above particle surface
-    peq_i = equilibrium_pressure(psat_i, Ke_i)
-    # Mass per particle
-    mp_i = mfr.mass_per_particle()
-    # Vapor mass concentration
-    cgas_i = vapor_mass_concentration(peq_i, mfr, constants)
+    pstar = eqns.convert_saturation_concentration_to_pressure(
+        cstar, mfr.MW, td.T_ref, constants.IDEAL_GAS)
+    # Calculate the initial vapor concentration at entrance
+    cgas_i = calculate_initial_vapor_concentration(
+        pstar, dh, mfr, td, constants)
     # Get time arrays
     time_heat, dt_heat = get_time_array(td, heating=True, mres=mres)
     time_cool, dt_cool = get_time_array(td, heating=False)
