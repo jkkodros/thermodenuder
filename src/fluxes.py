@@ -7,6 +7,7 @@ Fluxes size dist
 @author:
 """
 import numpy as np
+from src import thermodynamic_equations as eqns
 
 
 def calc_fluxes(t, y, dt, length, t_res, T_f, T_i, n_tot0, pstar,
@@ -25,8 +26,8 @@ def calc_fluxes(t, y, dt, length, t_res, T_f, T_i, n_tot0, pstar,
     Pc = np.ma.masked_invalid(Pc).filled(0.0)
     Gc = np.ma.masked_less(Gc, 0).filled(0.0)
     Gc = np.ma.masked_invalid(Gc).filled(0.0)
-    # Equilibrium pressures at the TD temperature
-    psat = pstar * np.exp(dh_vap * ((1.0/T_ref) - (1.0/T_f))/R)
+    psat = eqns.calculate_saturation_pressure_at_temperature(
+        pstar, dh_vap, T_ref, T_f, R)
     # Diffusion coefficients of the species
     D = Dn * (T_f/T_ref)**mu
 
@@ -36,9 +37,9 @@ def calc_fluxes(t, y, dt, length, t_res, T_f, T_i, n_tot0, pstar,
         vp = Pc/rho
         rp = (3.0 * vp / (4.0*np.pi))**(1.0/3.0)
         # Kelvin effect
-        Ke = np.exp(2.0 * MW * sigma / (R*T_f*rho*rp))
+        Ke = eqns.calculate_kelvin_effect(MW, sigma, T_f, rho, rp, R)
         # Equilibrium pressures
-        peq = psat * Ke
+        peq = eqns.calculate_equilibrium_pressure(psat, Ke)
         # Transitional correction
         # Mean velocity of the gas molecules
         c_avg = (8.0 * R * T_f / (MW * np.pi)) ** (0.5)
